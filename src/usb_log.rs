@@ -20,6 +20,7 @@ struct PendingWrite {
 impl<'a, B: UsbBus> UsbLogger<'a, B> {
     pub fn new(usb_bus: &'a UsbBusAllocator<B>) -> Self {
         let serial = SerialPort::new(usb_bus);
+        // Development-only pid.codes VID/PID. Replace for production distribution.
         let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x1209, 0x0001))
             .device_class(usbd_serial::USB_CLASS_CDC)
             .build();

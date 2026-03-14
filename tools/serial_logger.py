@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 from datetime import datetime
 
 import serial
@@ -60,10 +61,9 @@ def main() -> None:
         print("No serial port found. Connect the board and run with --list to inspect ports.")
         return
 
-    out_file = open(args.save, "a", encoding="utf-8") if args.save else None
-
     try:
-        with serial.Serial(port, args.baud, timeout=1) as ser:
+        output_context = open(args.save, "a", encoding="utf-8") if args.save else nullcontext(None)
+        with output_context as out_file, serial.Serial(port, args.baud, timeout=1) as ser:
             print(f"Connected to {port} @ {args.baud} baud")
             while True:
                 raw = ser.readline()
@@ -77,9 +77,6 @@ def main() -> None:
                     out_file.flush()
     except KeyboardInterrupt:
         print("\nStopped by user")
-    finally:
-        if out_file:
-            out_file.close()
 
 
 if __name__ == "__main__":
