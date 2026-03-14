@@ -1,0 +1,27 @@
+[package]
+name = "uicc-analyzer"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+embedded-hal = "0.2.7"
+heapless = "0.8"
+panic-halt = "0.2"
+rp2040-hal = { version = "0.10", features = ["critical-section-impl"] }
+rp2040-boot2 = "0.3"
+usb-device = "0.3"
+usbd-serial = "0.2"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+lto = true
+codegen-units = 1
+debug = 2
