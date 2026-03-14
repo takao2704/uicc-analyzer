@@ -8,6 +8,10 @@ pub enum AtrState {
     ResetAsserted,
     WaitForClock,
     WaitForAtr,
+    // Planned extension states for full ISO 7816-3 ATR parsing:
+    // AtrReceiving,
+    // AtrComplete,
+    // Timeout,
 }
 
 pub struct AtrMachine {
@@ -15,7 +19,6 @@ pub struct AtrMachine {
 }
 
 impl AtrMachine {
-    #[allow(dead_code)]
     pub const fn new() -> Self {
         Self {
             state: AtrState::Idle,
@@ -38,12 +41,6 @@ impl AtrMachine {
         None
     }
 
-    #[allow(dead_code)]
-    pub fn state(&self) -> AtrState {
-        self.state
-    }
-
-    #[allow(dead_code)]
     pub fn format_atr_prefix(bytes: &[u8]) -> String<128> {
         let mut out: String<128> = String::new();
         for (i, b) in bytes.iter().enumerate() {

@@ -7,10 +7,10 @@ mod io_capture;
 mod rst_monitor;
 
 use embassy_executor::Spawner;
+use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Input, Level, Output, Pull};
 use embassy_rp::peripherals::USB;
 use embassy_rp::usb::{Driver as UsbDriver, InterruptHandler as UsbInterruptHandler};
-use embassy_rp::bind_interrupts;
 use embassy_time::{Duration, Instant, Timer};
 use panic_halt as _;
 
@@ -165,7 +165,10 @@ async fn main(spawner: Spawner) {
     led_set(&mut led, false).await;
 
     log_line(boot_us, "boot");
-    log_line(boot_us, "uicc-analyzer ready (GPIO2=CLK, GPIO3=RST, GPIO4=IO)");
+    log_line(
+        boot_us,
+        "uicc-analyzer ready (GPIO2=CLK, GPIO3=RST, GPIO4=IO)",
+    );
     #[cfg(feature = "pico2w")]
     log_line(boot_us, "onboard LED active (CYW43 GPIO0)");
     #[cfg(not(feature = "pico2w"))]
@@ -176,7 +179,7 @@ async fn main(spawner: Spawner) {
         let now = now_us();
 
         let rst_high = sim_rst.is_high();
-        if let Some(edge) = rst_monitor.update(rst_high) {
+        if let Some(edge) = rst_monitor.update(now, rst_high) {
             if !rst_initialized {
                 rst_initialized = true;
             }
