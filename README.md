@@ -44,6 +44,9 @@ RP2350 側の入力ピンは以下です（`src/main.rs`）。
 観測用インタフェース回路の推奨構成（レベル変換・ESD 保護・定数例）を
 `docs/hardware_circuit_design.md` に追加しました。実機接続前に必ず参照してください。
 
+- 前提レベル変換モジュール: 秋月 `117062`（AE-LLCNV8 / FXMA108）
+- 回路図 PDF: `docs/hardware_circuit_diagram.pdf`
+
 ## `cyw43` patch運用について
 
 `Cargo.toml` では Pico 2 W 向けの安定動作を優先するため、`cyw43` を一時的に `[patch.crates-io]` で固定しています。

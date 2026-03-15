@@ -4,6 +4,9 @@
 **受動モニタ専用インタフェース回路**の推奨構成をまとめたものです。
 
 > 目的: 既存のモデム-UICC バス（`CLK` / `RST` / `IO`）を壊さずに受動観測する。
+> 前提モジュール: 秋月 `117062`（AE-LLCNV8, FXMA108）
+> 回路図 PDF: `docs/hardware_circuit_diagram.pdf`
+> 生成スクリプト: `tools/generate_hardware_diagram_pdf.py`
 
 ---
 
@@ -28,9 +31,9 @@
 ```text
    [モデム/SIMホスト]                            [RP2350 Pico 2 / 2W]
 
-   SIM_CLK ----[10k..22k]----> A1   SN74AVC4T245   B1 ---- GPIO2 (CLK_MON)
-   SIM_RST ----[10k..22k]----> A2   (DIR固定 A→B)  B2 ---- GPIO3 (RST_MON)
-   SIM_IO  ----[10k..22k]----> A3   (OE有効固定)   B3 ---- GPIO4 (IO_MON)
+   SIM_CLK ----[10k..22k]----> A1   AE-LLCNV8      B1 ---- GPIO2 (CLK_MON)
+   SIM_RST ----[10k..22k]----> A2   (FXMA108)      B2 ---- GPIO3 (RST_MON)
+   SIM_IO  ----[10k..22k]----> A3   OE=LOWで有効   B3 ---- GPIO4 (IO_MON)
                                  A4/B4 未使用
 
    SIM_VCC ----------------------> VCCA (1.8V or 3.0V)
@@ -42,6 +45,7 @@
 
 - 1チップで3信号をまとめて扱えるため、配線ミスを減らせます。
 - `VCCA=SIM_VCC` にすることで 1.8V/3.0V の違いを回路側で吸収します。
+- `OE` は Low 有効のため、`OE` は明示的に `GND` へ固定してください。
 
 ---
 
