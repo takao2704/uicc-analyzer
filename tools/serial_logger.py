@@ -53,7 +53,7 @@ def pick_default_port() -> str | None:
     preferred = [p for p in ports if is_preferred_port(p)]
     if preferred:
         return preferred[0].device
-    return None
+    return ports[0].device if ports else None
 
 
 def main() -> None:
