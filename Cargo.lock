@@ -204,6 +204,7 @@ dependencies = [
 [[package]]
 name = "cyw43"
 version = "0.6.0"
+source = "git+https://github.com/takao2704/uicc-analyzer.git?rev=257aa44116943d27a74e3ed09235f1ec4af3fdfc#257aa44116943d27a74e3ed09235f1ec4af3fdfc"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",

@@ -29,7 +29,7 @@ panic-halt = "0.2"
 static_cell = { version = "2.1", optional = true }
 
 [patch.crates-io]
-cyw43 = { path = "cyw43-patched" }
+cyw43 = { git = "https://github.com/takao2704/uicc-analyzer.git", rev = "257aa44116943d27a74e3ed09235f1ec4af3fdfc" }
 
 [profile.dev]
 panic = "abort"
