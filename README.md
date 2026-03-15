@@ -46,8 +46,8 @@ RP2350 側の入力ピンは以下です（`src/main.rs`）。
 
 - 前提レベル変換モジュール: 秋月 `117062`（AE-LLCNV8 / FXMA108）
 - 回路図 PDF: `docs/hardware_circuit_diagram.pdf`
-- ブレッドボードモジュール版仕様: `docs/hardware_circuit_design.md` の「3.1」
-- PCB版仕様（最小改善案）: `docs/hardware_circuit_design.md` の「3.2」
+- ブレッドボードモジュール版仕様（ラボ試作専用）: `docs/hardware_circuit_design.md` の「3.1」
+- PCB版仕様（本番。TVS実装必須）: `docs/hardware_circuit_design.md` の「3.2」
 
 ## `cyw43` patch運用について
 
