@@ -6,12 +6,18 @@ mod clk_monitor;
 mod io_capture;
 mod rst_monitor;
 
+#[cfg(feature = "pico2w")]
+use core::sync::atomic::{AtomicU8, Ordering};
+
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
-use embassy_rp::gpio::{Input, Level, Output, Pull};
+use embassy_rp::gpio::{Level, Output};
+use embassy_rp::gpio::{Input, Pull};
 use embassy_rp::peripherals::USB;
 use embassy_rp::usb::{Driver as UsbDriver, InterruptHandler as UsbInterruptHandler};
 use embassy_time::{Duration, Instant, Timer};
+#[cfg(feature = "pico2w")]
+use embassy_time::with_timeout;
 use panic_halt as _;
 
 #[cfg(feature = "pico2w")]
@@ -54,9 +60,56 @@ enum LedMode {
     AlertNoSignal,
 }
 
+#[cfg(feature = "pico2w")]
+const LED_MODE_IDLE: u8 = 0;
+#[cfg(feature = "pico2w")]
+const LED_MODE_WAIT_ATR: u8 = 1;
+#[cfg(feature = "pico2w")]
+const LED_MODE_ACTIVE: u8 = 2;
+#[cfg(feature = "pico2w")]
+const LED_MODE_ALERT: u8 = 3;
+
+#[cfg(feature = "pico2w")]
+static LED_MODE_SHARED: AtomicU8 = AtomicU8::new(LED_MODE_IDLE);
+#[cfg(feature = "pico2w")]
+const LED_STATUS_INIT: u8 = 0;
+#[cfg(feature = "pico2w")]
+const LED_STATUS_ACTIVE: u8 = 1;
+#[cfg(feature = "pico2w")]
+const LED_STATUS_DISABLED: u8 = 2;
+#[cfg(feature = "pico2w")]
+static LED_STATUS_SHARED: AtomicU8 = AtomicU8::new(LED_STATUS_INIT);
+#[cfg(feature = "pico2w")]
+const PICO2W_LED_ACTIVE_HIGH: bool = true;
+#[cfg(feature = "pico2w")]
+const PICO2W_LED_GPIO: u8 = 0;
+
+#[cfg(feature = "pico2w")]
+async fn pico2w_led_write(control: &mut cyw43::Control<'static>, on: bool) -> bool {
+    let raw = if PICO2W_LED_ACTIVE_HIGH { on } else { !on };
+    match with_timeout(Duration::from_millis(400), control.gpio_set(PICO2W_LED_GPIO, raw)).await {
+        Ok(()) => true,
+        Err(_) => {
+            log_line(now_us(), "led write timeout");
+            false
+        }
+    }
+}
+
+static LOGGER: embassy_usb_logger::UsbLogger<1024, embassy_usb_logger::DummyHandler> =
+    embassy_usb_logger::UsbLogger::new();
+
+fn init_logging() {
+    // Safe here because firmware sets logger once during startup.
+    unsafe {
+        let _ = log::set_logger_racy(&LOGGER).map(|()| log::set_max_level_racy(log::LevelFilter::Info));
+    }
+}
+
 #[embassy_executor::task]
 async fn logger_task(driver: UsbDriver<'static, USB>) {
-    embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
+    let mut state = embassy_usb_logger::LoggerState::new();
+    let _ = LOGGER.run(&mut state, driver).await;
 }
 
 #[cfg(feature = "pico2w")]
@@ -65,6 +118,97 @@ async fn cyw43_task(
     runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>,
 ) -> ! {
     runner.run().await
+}
+
+#[cfg(feature = "pico2w")]
+#[embassy_executor::task]
+async fn pico2w_led_task(
+    spawner: Spawner,
+    pio0: embassy_rp::Peri<'static, PIO0>,
+    dma_ch0: embassy_rp::Peri<'static, DMA_CH0>,
+    pin23: embassy_rp::Peri<'static, embassy_rp::peripherals::PIN_23>,
+    pin24: embassy_rp::Peri<'static, embassy_rp::peripherals::PIN_24>,
+    pin25: embassy_rp::Peri<'static, embassy_rp::peripherals::PIN_25>,
+    pin29: embassy_rp::Peri<'static, embassy_rp::peripherals::PIN_29>,
+) {
+    log_line(now_us(), "initializing CYW43 for onboard LED");
+
+    let pwr = Output::new(pin23, Level::Low);
+    let cs = Output::new(pin25, Level::High);
+    let mut pio = Pio::new(pio0, Irqs);
+    let spi = PioSpi::new(
+        &mut pio.common,
+        pio.sm0,
+        RM2_CLOCK_DIVIDER,
+        pio.irq0,
+        cs,
+        pin24,
+        pin29,
+        dma_ch0,
+    );
+
+    static CYW43_STATE: StaticCell<cyw43::State> = StaticCell::new();
+    let state = CYW43_STATE.init(cyw43::State::new());
+
+    let init = async {
+        let (_net_device, mut control, runner) =
+            cyw43::new(state, pwr, spi, cyw43_firmware::CYW43_43439A0).await;
+        if spawner.spawn(cyw43_task(runner)).is_err() {
+            return Err(());
+        }
+        control.init(cyw43_firmware::CYW43_43439A0_CLM).await;
+        // Return _net_device alongside control to keep it alive.
+        // Dropping _net_device closes the runner channel and can stall
+        // subsequent IOCTLs.
+        Ok((_net_device, control))
+    };
+
+    let (_net_device, mut control) = match with_timeout(Duration::from_millis(3000), init).await {
+        Ok(Ok(pair)) => {
+            log_line(now_us(), "onboard LED active (CYW43 GPIO0)");
+            LED_STATUS_SHARED.store(LED_STATUS_ACTIVE, Ordering::Relaxed);
+            pair
+        }
+        _ => {
+            log_line(now_us(), "CYW43 init timeout/failure; onboard LED disabled");
+            LED_STATUS_SHARED.store(LED_STATUS_DISABLED, Ordering::Relaxed);
+            return;
+        }
+    };
+
+    // Self-test: briefly flash LED to confirm operation.
+    if !pico2w_led_write(&mut control, true).await {
+        LED_STATUS_SHARED.store(LED_STATUS_DISABLED, Ordering::Relaxed);
+        return;
+    }
+    log_line(now_us(), "led self-test: ON");
+    Timer::after_millis(1000).await;
+    if !pico2w_led_write(&mut control, false).await {
+        LED_STATUS_SHARED.store(LED_STATUS_DISABLED, Ordering::Relaxed);
+        return;
+    }
+    log_line(now_us(), "led self-test: OFF");
+    Timer::after_millis(500).await;
+
+    let mut led_on = false;
+    loop {
+        let mode = match LED_MODE_SHARED.load(Ordering::Relaxed) {
+            LED_MODE_WAIT_ATR => LedMode::WaitForAtr,
+            LED_MODE_ACTIVE => LedMode::Active,
+            LED_MODE_ALERT => LedMode::AlertNoSignal,
+            _ => LedMode::Idle,
+        };
+
+        let next = led_is_on(mode, now_us());
+        if next != led_on {
+            led_on = next;
+            if !pico2w_led_write(&mut control, led_on).await {
+                LED_STATUS_SHARED.store(LED_STATUS_DISABLED, Ordering::Relaxed);
+                return;
+            }
+        }
+        Timer::after_millis(20).await;
+    }
 }
 
 fn now_us() -> u64 {
@@ -77,11 +221,6 @@ fn log_line(now_us: u64, msg: &str) {
     log::info!("[{}.{:03} ms] {}", ms, frac, msg);
 }
 
-#[cfg(feature = "pico2w")]
-async fn led_set(led: &mut cyw43::Control<'static>, on: bool) {
-    led.gpio_set(0, on).await;
-}
-
 #[cfg(not(feature = "pico2w"))]
 async fn led_set(led: &mut Output<'_>, on: bool) {
     let level = if on { Level::High } else { Level::Low };
@@ -90,12 +229,12 @@ async fn led_set(led: &mut Output<'_>, on: bool) {
 
 fn led_is_on(mode: LedMode, now_us: u64) -> bool {
     match mode {
-        LedMode::Idle => now_us % 1_000_000 < 120_000,
+        LedMode::Idle => now_us % 1_000_000 < 500_000,
         LedMode::WaitForAtr => now_us % 400_000 < 200_000,
         LedMode::Active => true,
         LedMode::AlertNoSignal => {
             let phase = now_us % 1_200_000;
-            phase < 80_000 || (200_000..280_000).contains(&phase)
+            phase < 200_000 || (400_000..600_000).contains(&phase)
         }
     }
 }
@@ -103,41 +242,31 @@ fn led_is_on(mode: LedMode, now_us: u64) -> bool {
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
+    let startup_us = now_us();
+    init_logging();
 
     let usb_driver = UsbDriver::new(p.USB, Irqs);
     spawner.spawn(logger_task(usb_driver)).unwrap();
     Timer::after_millis(50).await;
+    log_line(startup_us, "boot");
+    log_line(
+        startup_us,
+        "uicc-analyzer ready (GPIO2=CLK, GPIO3=RST, GPIO4=IO)",
+    );
 
     #[cfg(feature = "pico2w")]
-    let mut led = {
-        let pwr = Output::new(p.PIN_23, Level::Low);
-        let cs = Output::new(p.PIN_25, Level::High);
-        let mut pio = Pio::new(p.PIO0, Irqs);
-        let spi = PioSpi::new(
-            &mut pio.common,
-            pio.sm0,
-            RM2_CLOCK_DIVIDER,
-            pio.irq0,
-            cs,
-            p.PIN_24,
-            p.PIN_29,
-            p.DMA_CH0,
-        );
-
-        static CYW43_STATE: StaticCell<cyw43::State> = StaticCell::new();
-        let state = CYW43_STATE.init(cyw43::State::new());
-        let (_net_device, mut control, runner) =
-            cyw43::new(state, pwr, spi, cyw43_firmware::CYW43_43439A0).await;
-        spawner.spawn(cyw43_task(runner)).unwrap();
-        control.init(cyw43_firmware::CYW43_43439A0_CLM).await;
-        control
-            .set_power_management(cyw43::PowerManagementMode::PowerSave)
-            .await;
-        control
-    };
+    spawner
+        .spawn(pico2w_led_task(
+            spawner, p.PIO0, p.DMA_CH0, p.PIN_23, p.PIN_24, p.PIN_25, p.PIN_29,
+        ))
+        .unwrap();
+    #[cfg(feature = "pico2w")]
+    log_line(startup_us, "pico2w LED task started");
 
     #[cfg(not(feature = "pico2w"))]
     let mut led = Output::new(p.PIN_25, Level::Low);
+    #[cfg(not(feature = "pico2w"))]
+    log_line(startup_us, "onboard LED active (GPIO25)");
 
     let sim_clk = Input::new(p.PIN_2, Pull::None);
     let sim_rst = Input::new(p.PIN_3, Pull::None);
@@ -149,7 +278,7 @@ async fn main(spawner: Spawner) {
     let mut atr = AtrMachine::new();
 
     let mut saw_clk_log = false;
-    let boot_us = now_us();
+    let boot_us = startup_us;
     let mut saw_bus_activity = false;
     let mut no_clk_warned = false;
     let mut no_atr_warned = false;
@@ -161,18 +290,11 @@ async fn main(spawner: Spawner) {
     let mut io_level_prev = sim_io.is_high();
     let mut last_no_signal_log_us: Option<u64> = None;
     let mut last_heartbeat_us = boot_us;
+    #[cfg(not(feature = "pico2w"))]
     let mut led_on = false;
+    #[cfg(not(feature = "pico2w"))]
     led_set(&mut led, false).await;
 
-    log_line(boot_us, "boot");
-    log_line(
-        boot_us,
-        "uicc-analyzer ready (GPIO2=CLK, GPIO3=RST, GPIO4=IO)",
-    );
-    #[cfg(feature = "pico2w")]
-    log_line(boot_us, "onboard LED active (CYW43 GPIO0)");
-    #[cfg(not(feature = "pico2w"))]
-    log_line(boot_us, "onboard LED active (GPIO25)");
     log_line(boot_us, "waiting for SIM activity");
 
     loop {
@@ -272,6 +394,12 @@ async fn main(spawner: Spawner) {
             } else {
                 log_line(now, "heartbeat: idle, waiting for SIM activity");
             }
+            #[cfg(feature = "pico2w")]
+            match LED_STATUS_SHARED.load(Ordering::Relaxed) {
+                LED_STATUS_ACTIVE => log_line(now, "led status: active (CYW43 GPIO0)"),
+                LED_STATUS_DISABLED => log_line(now, "led status: disabled (CYW43 init failed)"),
+                _ => log_line(now, "led status: initializing"),
+            }
         }
 
         if let Some(released_at) = rst_released_at_us {
@@ -310,10 +438,24 @@ async fn main(spawner: Spawner) {
             LedMode::Active
         };
 
-        let next_led_on = led_is_on(led_mode, now);
-        if next_led_on != led_on {
-            led_on = next_led_on;
-            led_set(&mut led, led_on).await;
+        #[cfg(feature = "pico2w")]
+        {
+            let mode_val = match led_mode {
+                LedMode::Idle => LED_MODE_IDLE,
+                LedMode::WaitForAtr => LED_MODE_WAIT_ATR,
+                LedMode::Active => LED_MODE_ACTIVE,
+                LedMode::AlertNoSignal => LED_MODE_ALERT,
+            };
+            LED_MODE_SHARED.store(mode_val, Ordering::Relaxed);
+        }
+
+        #[cfg(not(feature = "pico2w"))]
+        {
+            let next_led_on = led_is_on(led_mode, now);
+            if next_led_on != led_on {
+                led_on = next_led_on;
+                led_set(&mut led, led_on).await;
+            }
         }
 
         Timer::after(Duration::from_micros(LOOP_PERIOD_US)).await;
