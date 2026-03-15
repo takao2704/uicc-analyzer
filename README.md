@@ -35,6 +35,20 @@ RP2350 側の入力ピンは以下です（`src/main.rs`）。
 観測用インタフェース回路の推奨構成（レベル変換・ESD 保護・定数例）を
 `docs/hardware_circuit_design.md` に追加しました。実機接続前に必ず参照してください。
 
+## `cyw43` patch運用について
+
+`Cargo.toml` では Pico 2 W 向けの安定動作を優先するため、`cyw43` を一時的に `[patch.crates-io]` で固定しています。
+
+- **なぜ必要か**: Pico 2 W の LED 制御（CYW43 GPIO0）で必要な修正が upstream に未反映のため。
+- **いつ外すか**: 対応内容が upstream の正式リリースに取り込まれ、同等の挙動が再現できることを確認できた時点。
+- **検証手順の目安**:
+  1. `cargo build --release --features pico2w` が通ること。
+  2. 起動時に `onboard LED active (CYW43 GPIO0)` が出力されること。
+  3. LED self-test（ON/OFF）と通常の状態表示が継続すること。
+  4. CYW43 初期化失敗時のフェイルセーフ（監視継続・LED無効化）が維持されること。
+
+追跡用の課題は `docs/issue_tracker.md` の `ISSUE-001` として管理しています。
+
 ## ビルド
 
 前提:
