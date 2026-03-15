@@ -204,8 +204,7 @@ dependencies = [
 [[package]]
 name = "cyw43"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bff28275bda1b427b4cc6fb23c22505fef8ace0ccfadc9bffe3fdd6120ff1513"
+source = "git+https://github.com/takao2704/uicc-analyzer.git?rev=257aa44116943d27a74e3ed09235f1ec4af3fdfc#257aa44116943d27a74e3ed09235f1ec4af3fdfc"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",

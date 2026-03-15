@@ -41,6 +41,7 @@ impl AtrMachine {
         None
     }
 
+    #[allow(dead_code)]
     pub fn format_atr_prefix(bytes: &[u8]) -> String<128> {
         let mut out: String<128> = String::new();
         for (i, b) in bytes.iter().enumerate() {
