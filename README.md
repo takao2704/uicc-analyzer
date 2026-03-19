@@ -48,6 +48,7 @@ RP2350 側の入力ピンは以下です（`src/main.rs`）。
 - 回路図 PDF: `docs/hardware_circuit_diagram.pdf`
 - ブレッドボードモジュール版仕様（ラボ試作専用）: `docs/hardware_circuit_design.md` の「3.1」
 - PCB版仕様（本番。TVS実装必須）: `docs/hardware_circuit_design.md` の「3.2」
+- 部品購入リスト: `docs/hardware_circuit_design.md` の「10」「11」
 
 ## `cyw43` patch運用について
 
